@@ -49,7 +49,15 @@ function makePeer() {
 }
 
 function listenForShutter() { channel.onmessage = (event) => { if (event.data === "SHUTTER") takePhoto(); }; }
-function waitForIceComplete(pc) { return new Promise((resolve) => { if (pc.iceGatheringState === "complete") return resolve(); pc.onicegatheringstatechange = () => pc.iceGatheringState === "complete" && resolve(); }); }
+function waitForIceComplete(pc) {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    const timeout = setTimeout(resolve, 5000);
+    pc.onicegatheringstatechange = () => {
+      if (pc.iceGatheringState === "complete") { clearTimeout(timeout); resolve(); }
+    };
+  });
+}
 function encode(desc) { return btoa(unescape(encodeURIComponent(JSON.stringify(desc)))); }
 function decode(text) { return JSON.parse(decodeURIComponent(escape(atob(text.trim())))); }
 
@@ -57,10 +65,15 @@ $("startCamera").addEventListener("click", startCamera);
 $("takePhoto").addEventListener("click", takePhoto);
 $("createOffer").addEventListener("click", async () => {
   if (!stream) return $("cameraHint").textContent = "먼저 카메라 시작을 눌러 주세요.";
-  makePeer(); stream.getTracks().forEach((track) => peer.addTrack(track, stream));
-  channel = peer.createDataChannel("directcam"); listenForShutter();
-  await peer.setLocalDescription(await peer.createOffer()); await waitForIceComplete(peer);
-  $("offerOut").value = encode(peer.localDescription); $("cameraHint").textContent = "코드를 모니터 폰에 전달해 주세요.";
+  try {
+    $("cameraHint").textContent = "카메라 코드를 만드는 중…";
+    makePeer(); stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+    channel = peer.createDataChannel("directcam"); listenForShutter();
+    await peer.setLocalDescription(await peer.createOffer()); await waitForIceComplete(peer);
+    $("offerOut").value = encode(peer.localDescription); $("cameraHint").textContent = "코드를 모니터 폰에 전달해 주세요.";
+  } catch (error) {
+    console.error(error); $("cameraHint").textContent = "코드를 만들지 못했습니다. 새로고침 후 다시 시도해 주세요.";
+  }
 });
 $("acceptAnswer").addEventListener("click", async () => { try { await peer.setRemoteDescription(decode($("answerIn").value)); $("cameraHint").textContent = "연결하는 중…"; } catch { $("cameraHint").textContent = "답장 코드가 올바르지 않습니다."; } });
 $("createAnswer").addEventListener("click", async () => { try { makePeer(); await peer.setRemoteDescription(decode($("offerIn").value)); await peer.setLocalDescription(await peer.createAnswer()); await waitForIceComplete(peer); $("answerOut").value = encode(peer.localDescription); $("monitorHint").textContent = "답장 코드를 카메라 폰에 전달해 주세요."; } catch { $("monitorHint").textContent = "카메라 코드가 올바르지 않습니다."; } });
